@@ -51,12 +51,10 @@ app.use("/api/users", users);
 
 const port = process.env.PORT || 5000; 
 
-if(process.env.NODE_ENV === "prodcution"){
-  app.use(express.static("client/build"));
-  app.get("*", (req, res) => {
-    res.sendFile(path.resolve(__dirname, 'client', 'build', 'index.html'));
-  })
-}
+app.use(express.static(path.join(__dirname, "client", "build")));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "client", "build", "index.html"));
+})
 
 io.on('connection', function(socket){
   socket.on("getLobbies", () =>{
@@ -443,7 +441,5 @@ io.on('connection', function(socket){
 
 });
 
-app.use(express.static("build"));
-app.use("/dashboard", express.static("build"));
 
 server.listen(port, () => console.log(`Server up and running on port ${port} !`));

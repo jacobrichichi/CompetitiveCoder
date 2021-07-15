@@ -1,6 +1,5 @@
 {
   "name": "mern3",
-  "homepage": "http://CompCoder.me/",
   "version": "1.0.0",
   "description": "",
   "main": "server.js",
@@ -10,7 +9,7 @@
     "server": "nodemon server.js",
     "client": "npm start --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install--prefix client && npm run build --prefix client"
+    "heroku-postbuild": "cd client && npm install --only=dev && npm install && npm run build"
   },
   "author": "",
   "license": "ISC",
@@ -46,6 +45,11 @@
     "validator": "^13.6.0",
     "websocket": "^1.0.34"
   },
+  
+  "engines": {
+    "node": "14.16.0"
+  },
+
   "devDependencies": {
     "nodemon": "^2.0.7"
   }
