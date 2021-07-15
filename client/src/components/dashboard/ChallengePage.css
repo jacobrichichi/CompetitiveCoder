@@ -1,0 +1,65 @@
+#source{
+    width: 100%;
+    height: 550px;
+    resize: none;
+    margin-left: 2%;
+
+}
+
+#output{
+    width: 90%;
+    height: 65vh;
+    resize: none;
+    margin-right: 2%;
+
+}
+
+.challengepagebg {
+    background-image: url("gradient.jpg");
+    height: 130vh;
+    width: 100vw;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    z-index: 100;
+  }
+
+  #description{
+      font-size: 14px;
+      text-align: left;
+      color: rgba(253, 252, 252, 1);
+
+  }
+
+  #exampleTitle{
+    font-size: 18px;
+    text-align: left;
+    color: rgba(253, 252, 252, 1);
+
+}
+
+#example{
+    font-size: 14px;
+    text-align: left;
+    color: rgba(253, 252, 252, 1);
+
+}
+
+#transparent {
+    background-color: rgba(32, 25, 25, 0.5);
+    width: 100vw;
+    min-width: 10vw;
+  }
+
+
+  #title {
+      font-size: 30px;
+      color: rgba(253, 252, 252, 1);
+      
+
+  }
+
+  @font-face{
+      font-family: 'digital-clock-font';
+      src: url('./Fonts/digital-7.ttf');
+  }

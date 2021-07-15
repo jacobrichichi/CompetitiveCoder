@@ -1,0 +1,8 @@
+.landingbg {
+    background-image: url("gradient.jpg");
+    height: 100vh;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    z-index: 100;
+  }

@@ -1,0 +1,104 @@
+h6 {
+    font-family: "Andale Mono";
+    font-size: 20px;
+}
+h4{
+    font-size: 25px;
+}
+
+
+.dashboardbg {
+    background-image: url("gradient.jpg");
+    height: 160vh;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    z-index: 100;
+  }
+/*.popup .overlay {
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.7);
+    z-index: 999;
+    display: none;
+}
+
+.popup .content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    background: #fff;
+    width: 95%;
+    max-width: 500px;
+    height: 250px;
+    z-index: 2;
+    text-align: center;
+    padding: 20px;
+    box-sizing: border-box;
+    font-family: "Open Sans", sans-serif;
+    border-width: 2px;
+    border-style: solid;
+    border-color: rgb(117, 3, 3);
+
+}
+
+.popup .closeCreatePopup {
+    cursor: pointer;
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    width: 30px;
+    height: 30px;
+    background: #222;
+    color: rgb(253, 252, 252);
+    font-size: 25px;
+    font-weight: 600;
+    line-height: 30px;
+    text-align: center;
+    border-radius: 50%;
+
+}
+
+.popup.active .overlay {
+    display: block;
+
+}
+
+.popup.active .content{
+    transition: all 300ms ease-in-out;
+    transform: translate(-50%, -50%) scale(1);
+
+}
+
+.popup .createLobbyPopText{
+    font-size: 20px;
+}*/
+
+.scroll{
+    overflow-y: scroll;
+}
+
+.row .tieReminder{
+    font-size: 16px;
+    color:rgb(12, 22, 21);
+    font-family: 'Courier', monospace;
+    text-align: left;
+    margin-left: 5px;
+    line-height: 20pt;
+}
+
+.row .compTitle{
+    font-size: 20px;
+    color:rgb(12, 22, 21);
+    font-family: 'Roboto', sans-serif;
+}
+
+.bottomText {
+    font-size: 20px;
+    color:rgb(12, 22, 21);
+    font-family: 'Roboto', sans-serif;
+}

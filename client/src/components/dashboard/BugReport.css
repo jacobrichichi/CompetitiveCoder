@@ -1,0 +1,14 @@
+.bugreportbg {
+    background-image: url("gradient.jpg");
+    height: 100vh;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    z-index: 100;
+  }
+
+  .bugreportbg .form {
+    display: flex;
+    height: 100vh;
+    align-items: center;
+  }
