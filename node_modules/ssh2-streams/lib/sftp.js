@@ -12,8 +12,6 @@ var fs = require('fs');
 
 var readString = require('./utils').readString;
 var readInt = require('./utils').readInt;
-var readUInt32BE = require('./buffer-helpers').readUInt32BE;
-var writeUInt32BE = require('./buffer-helpers').writeUInt32BE;
 
 var ATTR = {
   SIZE: 0x00000001,
@@ -101,12 +99,12 @@ SFTPStream.OPEN_MODE = OPEN_MODE;
 
 var MAX_PKT_LEN = 34000;
 var MAX_REQID = Math.pow(2, 32) - 1;
-var CLIENT_VERSION_BUFFER = Buffer.from([0, 0, 0, 5 /* length */,
-                                         REQUEST.INIT,
-                                         0, 0, 0, 3 /* version */]);
-var SERVER_VERSION_BUFFER = Buffer.from([0, 0, 0, 5 /* length */,
-                                         RESPONSE.VERSION,
-                                         0, 0, 0, 3 /* version */]);
+var CLIENT_VERSION_BUFFER = new Buffer([0, 0, 0, 5 /* length */,
+                                        REQUEST.INIT,
+                                        0, 0, 0, 3 /* version */]);
+var SERVER_VERSION_BUFFER = new Buffer([0, 0, 0, 5 /* length */,
+                                        RESPONSE.VERSION,
+                                        0, 0, 0, 3 /* version */]);
 /*
   http://tools.ietf.org/html/draft-ietf-secsh-filexfer-02:
 
@@ -148,7 +146,7 @@ function SFTPStream(cfg, remoteIdentRaw) {
     status: 'packet_header',
     writeReqid: -1,
     pktLeft: undefined,
-    pktHdrBuf: Buffer.allocUnsafe(9), // room for pktLen + pktType + req id
+    pktHdrBuf: new Buffer(9), // room for pktLen + pktType + req id
     pktBuf: undefined,
     pktType: undefined,
     version: undefined,
@@ -274,7 +272,7 @@ SFTPStream.prototype._transform = function(chunk, encoding, callback) {
         pktBuf = pktHdrBuf;
       } else {
         // here we read the right-most 5 bytes from buffer (pktHdrBuf)
-        pktLeft = readUInt32BE(buffer, 4) - 1; // account for type byte
+        pktLeft = buffer.readUInt32BE(4, true) - 1; // account for type byte
         pktType = buffer[8];
 
         if (server) {
@@ -312,14 +310,14 @@ SFTPStream.prototype._transform = function(chunk, encoding, callback) {
         }
 
         if (status === 'bad_pkt') {
-          // Copy original packet info to left of pktHdrBuf
-          writeUInt32BE(pktHdrBuf, pktLeft + 1, 0);
+          // copy original packet info
+          pktHdrBuf.writeUInt32BE(pktLeft, 0, true);
           pktHdrBuf[4] = pktType;
 
           pktLeft = 4;
           pktBuf = pktHdrBuf;
         } else {
-          pktBuf = Buffer.allocUnsafe(pktLeft);
+          pktBuf = new Buffer(pktLeft);
           status = 'payload';
         }
       }
@@ -436,7 +434,7 @@ SFTPStream.prototype._transform = function(chunk, encoding, callback) {
                 var reqBufLen = req.buffer.length;
                 if (dataLen > reqBufLen) {
                   // truncate response data to fit expected size
-                  writeUInt32BE(buffer, reqBufLen, 4);
+                  buffer.writeUInt32BE(reqBufLen, 4, true);
                 }
                 data = readString(buffer, 4, req.buffer, this, callback);
                 if (data === false)
@@ -734,7 +732,7 @@ SFTPStream.prototype._transform = function(chunk, encoding, callback) {
 
       // by this point we have already read the type byte and the id bytes, so
       // we subtract those from the number of bytes to skip
-      pktLeft = readUInt32BE(buffer, 0) - 5;
+      pktLeft = buffer.readUInt32BE(0, true) - 5;
 
       status = 'discard';
     }
@@ -776,7 +774,7 @@ SFTPStream.prototype.open = function(path, flags_, attrs, cb) {
     attrs = undefined;
   }
 
-  var flags = (typeof flags_ === 'number' ? flags_ : stringToFlags(flags_));
+  var flags = stringToFlags(flags_);
   if (flags === null)
     throw new Error('Unknown flags string: ' + flags_);
 
@@ -785,7 +783,7 @@ SFTPStream.prototype.open = function(path, flags_, attrs, cb) {
   if (typeof attrs === 'string' || typeof attrs === 'number') {
     attrs = { mode: attrs };
   }
-  if (typeof attrs === 'object' && attrs !== null) {
+  if (typeof attrs === 'object') {
     attrs = attrsToBytes(attrs);
     attrFlags = attrs.flags;
     attrBytes = attrs.nbytes;
@@ -800,17 +798,17 @@ SFTPStream.prototype.open = function(path, flags_, attrs, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen + 4 + 4 + attrBytes);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen + 4 + 4 + attrBytes);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.OPEN;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
-  writeUInt32BE(buf, flags, p += pathlen);
-  writeUInt32BE(buf, attrFlags, p += 4);
+  buf.writeUInt32BE(flags, p += pathlen, true);
+  buf.writeUInt32BE(attrFlags, p += 4, true);
   if (attrs && attrFlags) {
     p += 4;
     for (var i = 0, len = attrs.length; i < len; ++i)
@@ -836,14 +834,14 @@ SFTPStream.prototype.close = function(handle, cb) {
   */
   var handlelen = handle.length;
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handlelen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + handlelen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.CLOSE;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, handlelen, p);
+  buf.writeUInt32BE(handlelen, p, true);
   handle.copy(buf, p += 4);
 
   state.requests[reqid] = { cb: cb };
@@ -876,30 +874,26 @@ SFTPStream.prototype.readData = function(handle, buf, off, len, position, cb) {
   var handlelen = handle.length;
   var p = 9;
   var pos = position;
-  var out = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handlelen + 8 + 4);
+  var out = new Buffer(4 + 1 + 4 + 4 + handlelen + 8 + 4);
 
-  writeUInt32BE(out, out.length - 4, 0);
+  out.writeUInt32BE(out.length - 4, 0, true);
   out[4] = REQUEST.READ;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(out, reqid, 5);
+  out.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(out, handlelen, p);
+  out.writeUInt32BE(handlelen, p, true);
   handle.copy(out, p += 4);
   p += handlelen;
   for (var i = 7; i >= 0; --i) {
     out[p + i] = pos & 0xFF;
     pos /= 256;
   }
-  writeUInt32BE(out, len, p += 8);
+  out.writeUInt32BE(len, p += 8, true);
 
   state.requests[reqid] = {
     cb: function(err, data, nb) {
-      if (err) {
-        if (cb._wantEOFError || err.code !== STATUS_CODE.EOF)
-          return cb(err);
-      } else if (nb > len) {
-        return cb(new Error('Received more data than requested'));
-      }
+      if (err && err.code !== STATUS_CODE.EOF)
+        return cb(err);
       cb(undefined, nb || 0, data, position);
     },
     buffer: buf.slice(off, off + len)
@@ -946,21 +940,21 @@ SFTPStream.prototype.writeData = function(handle, buf, off, len, position, cb) {
   */
   var handlelen = handle.length;
   var p = 9;
-  var out = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handlelen + 8 + 4 + len);
+  var out = new Buffer(4 + 1 + 4 + 4 + handlelen + 8 + 4 + len);
 
-  writeUInt32BE(out, out.length - 4, 0);
+  out.writeUInt32BE(out.length - 4, 0, true);
   out[4] = REQUEST.WRITE;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(out, reqid, 5);
+  out.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(out, handlelen, p);
+  out.writeUInt32BE(handlelen, p, true);
   handle.copy(out, p += 4);
   p += handlelen;
   for (var i = 7; i >= 0; --i) {
     out[p + i] = position & 0xFF;
     position /= 256;
   }
-  writeUInt32BE(out, len, p += 8);
+  out.writeUInt32BE(len, p += 8, true);
   buf.copy(out, p += 4, off, off + len);
 
   state.requests[reqid] = {
@@ -984,7 +978,7 @@ SFTPStream.prototype.writeData = function(handle, buf, off, len, position, cb) {
 };
 function tryCreateBuffer(size) {
   try {
-    return Buffer.allocUnsafe(size);
+    return new Buffer(size);
   } catch (ex) {
     return ex;
   }
@@ -995,11 +989,10 @@ function fastXfer(src, dst, srcPath, dstPath, opts, cb) {
   //var preserve = false;
   var onstep;
   var mode;
-  var fileSize;
 
   if (typeof opts === 'function') {
     cb = opts;
-  } else if (typeof opts === 'object' && opts !== null) {
+  } else if (typeof opts === 'object') {
     if (typeof opts.concurrency === 'number'
         && opts.concurrency > 0
         && !isNaN(opts.concurrency))
@@ -1008,10 +1001,6 @@ function fastXfer(src, dst, srcPath, dstPath, opts, cb) {
         && opts.chunkSize > 0
         && !isNaN(opts.chunkSize))
       chunkSize = opts.chunkSize;
-    if (typeof opts.fileSize === 'number'
-        && opts.fileSize > 0
-        && !isNaN(opts.fileSize))
-      fileSize = opts.fileSize;
     if (typeof opts.step === 'function')
       onstep = opts.step;
     //preserve = (opts.preserve ? true : false);
@@ -1021,7 +1010,10 @@ function fastXfer(src, dst, srcPath, dstPath, opts, cb) {
 
   // internal state variables
   var fsize;
+  var chunk;
+  var psrc = 0;
   var pdst = 0;
+  var reads = 0;
   var total = 0;
   var hadError = false;
   var srcHandle;
@@ -1061,12 +1053,7 @@ function fastXfer(src, dst, srcPath, dstPath, opts, cb) {
 
     srcHandle = sourceHandle;
 
-    if (fileSize === undefined)
-      src.fstat(srcHandle, tryStat);
-    else
-      tryStat(null, { size: fileSize });
-
-    function tryStat(err, attrs) {
+    src.fstat(srcHandle, function tryStat(err, attrs) {
       if (err) {
         if (src !== fs) {
           // Try stat() for sftp servers that may not support fstat() for
@@ -1115,22 +1102,20 @@ function fastXfer(src, dst, srcPath, dstPath, opts, cb) {
               });
               return;
             }
-            startReads();
+            read();
           });
         } else {
-          startReads();
+          read();
         }
 
-        function onread(err, nb, data, dstpos, datapos, origChunkLen) {
+        function onread(err, nb, data, dstpos, datapos) {
           if (err)
             return onerror(err);
 
-          datapos = datapos || 0;
-
           if (src === fs)
-            dst.writeData(dstHandle, readbuf, datapos, nb, dstpos, writeCb);
+            dst.writeData(dstHandle, data, datapos || 0, nb, dstpos, writeCb);
           else
-            dst.write(dstHandle, readbuf, datapos, nb, dstpos, writeCb);
+            dst.write(dstHandle, data, datapos || 0, nb, dstpos, writeCb);
 
           function writeCb(err) {
             if (err)
@@ -1139,70 +1124,51 @@ function fastXfer(src, dst, srcPath, dstPath, opts, cb) {
             total += nb;
             onstep && onstep(total, nb, fsize);
 
-            if (nb < origChunkLen)
-              return singleRead(datapos, dstpos + nb, origChunkLen - nb);
-
-            if (total === fsize) {
-              dst.close(dstHandle, function(err) {
-                dstHandle = undefined;
-                if (err)
-                  return onerror(err);
-                src.close(srcHandle, function(err) {
-                  srcHandle = undefined;
+            if (--reads === 0) {
+              if (total === fsize) {
+                dst.close(dstHandle, function(err) {
+                  dstHandle = undefined;
                   if (err)
                     return onerror(err);
-                  cb();
+                  src.close(srcHandle, function(err) {
+                    srcHandle = undefined;
+                    if (err)
+                      return onerror(err);
+                    cb();
+                  });
                 });
-              });
-              return;
+              } else
+                read();
             }
-
-            if (pdst >= fsize)
-              return;
-
-            var chunk = (pdst + chunkSize > fsize ? fsize - pdst : chunkSize);
-            singleRead(datapos, pdst, chunk);
-            pdst += chunk;
           }
         }
 
-        function makeCb(psrc, pdst, chunk) {
+        function makeCb(psrc, pdst) {
           return function(err, nb, data) {
-            onread(err, nb, data, pdst, psrc, chunk);
+            onread(err, nb, data, pdst, psrc);
           };
         }
 
-        function singleRead(psrc, pdst, chunk) {
-          if (src === fs) {
-            src.read(srcHandle,
-                     readbuf,
-                     psrc,
-                     chunk,
-                     pdst,
-                     makeCb(psrc, pdst, chunk));
-          } else {
-            src.readData(srcHandle,
-                         readbuf,
-                         psrc,
-                         chunk,
-                         pdst,
-                         makeCb(psrc, pdst, chunk));
-          }
-        }
-
-        function startReads() {
-          var reads = 0;
-          var psrc = 0;
+        function read() {
           while (pdst < fsize && reads < concurrency) {
-            var chunk = (pdst + chunkSize > fsize ? fsize - pdst : chunkSize);
-            singleRead(psrc, pdst, chunk);
+            chunk = (pdst + chunkSize > fsize ? fsize - pdst : chunkSize);
+            if (src === fs) {
+              src.read(srcHandle,
+                       readbuf,
+                       psrc,
+                       chunk,
+                       pdst,
+                       makeCb(psrc, pdst));
+            } else
+              src.readData(srcHandle, readbuf, psrc, chunk, pdst, onread);
             psrc += chunk;
             pdst += chunk;
             ++reads;
           }
+          psrc = 0;
         }
       });
-    }
+    });
   });
 }
 SFTPStream.prototype.fastGet = function(remotePath, localPath, opts, cb) {
@@ -1282,34 +1248,27 @@ SFTPStream.prototype.readFile = function(path, options, callback_) {
         return read();
       }
 
-      buffer = Buffer.allocUnsafe(size);
+      buffer = new Buffer(size);
       read();
     });
   });
 
   function read() {
     if (size === 0) {
-      buffer = Buffer.allocUnsafe(8192);
+      buffer = new Buffer(8192);
       self.readData(handle, buffer, 0, 8192, bytesRead, afterRead);
-    } else {
+    } else
       self.readData(handle, buffer, pos, size - pos, bytesRead, afterRead);
-    }
   }
 
   function afterRead(er, nbytes) {
-    var eof;
     if (er) {
-      eof = (er.code === STATUS_CODE.EOF);
-      if (!eof) {
-        return self.close(handle, function() {
-          return callback && callback(er);
-        });
-      }
-    } else {
-      eof = false;
+      return self.close(handle, function() {
+        return callback && callback(er);
+      });
     }
 
-    if (eof || (size === 0 && nbytes === 0))
+    if (nbytes === 0)
       return close();
 
     bytesRead += nbytes;
@@ -1325,16 +1284,14 @@ SFTPStream.prototype.readFile = function(path, options, callback_) {
       read();
     }
   }
-  afterRead._wantEOFError = true;
 
   function close() {
     self.close(handle, function(er) {
       if (size === 0) {
         // collected the data into the buffers list.
         buffer = Buffer.concat(buffers, pos);
-      } else if (pos < size) {
+      } else if (pos < size)
         buffer = buffer.slice(0, pos);
-      }
 
       if (encoding)
         buffer = buffer.toString(encoding);
@@ -1396,7 +1353,7 @@ SFTPStream.prototype.writeFile = function(path, data, options, callback_) {
     else {
       var buffer = (Buffer.isBuffer(data)
                     ? data
-                    : Buffer.from('' + data, options.encoding || 'utf8'));
+                    : new Buffer('' + data, options.encoding || 'utf8'));
       var position = (/a/.test(flag) ? null : 0);
 
       // SFTPv3 does not support the notion of 'current position'
@@ -1468,14 +1425,14 @@ SFTPStream.prototype.unlink = function(filename, cb) {
   */
   var fnamelen = Buffer.byteLength(filename);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + fnamelen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + fnamelen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.REMOVE;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, fnamelen, p);
+  buf.writeUInt32BE(fnamelen, p, true);
   buf.write(filename, p += 4, fnamelen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -1497,16 +1454,16 @@ SFTPStream.prototype.rename = function(oldPath, newPath, cb) {
   var oldlen = Buffer.byteLength(oldPath);
   var newlen = Buffer.byteLength(newPath);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + oldlen + 4 + newlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + oldlen + 4 + newlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.RENAME;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, oldlen, p);
+  buf.writeUInt32BE(oldlen, p, true);
   buf.write(oldPath, p += 4, oldlen, 'utf8');
-  writeUInt32BE(buf, newlen, p += oldlen);
+  buf.writeUInt32BE(newlen, p += oldlen, true);
   buf.write(newPath, p += 4, newlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -1526,7 +1483,7 @@ SFTPStream.prototype.mkdir = function(path, attrs, cb) {
     cb = attrs;
     attrs = undefined;
   }
-  if (typeof attrs === 'object' && attrs !== null) {
+  if (typeof attrs === 'object') {
     attrs = attrsToBytes(attrs);
     flags = attrs.flags;
     attrBytes = attrs.nbytes;
@@ -1540,16 +1497,16 @@ SFTPStream.prototype.mkdir = function(path, attrs, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen + 4 + attrBytes);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen + 4 + attrBytes);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.MKDIR;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
-  writeUInt32BE(buf, flags, p += pathlen);
+  buf.writeUInt32BE(flags, p += pathlen);
   if (flags) {
     p += 4;
     for (var i = 0, len = attrs.length; i < len; ++i)
@@ -1574,14 +1531,14 @@ SFTPStream.prototype.rmdir = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.RMDIR;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -1600,7 +1557,7 @@ SFTPStream.prototype.readdir = function(where, opts, cb) {
     cb = opts;
     opts = {};
   }
-  if (typeof opts !== 'object' || opts === null)
+  if (typeof opts !== 'object')
     opts = {};
 
   doFilter = (opts && opts.full ? false : true);
@@ -1646,14 +1603,14 @@ SFTPStream.prototype.readdir = function(where, opts, cb) {
   */
   var handlelen = where.length;
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handlelen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + handlelen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.READDIR;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, handlelen, p);
+  buf.writeUInt32BE(handlelen, p, true);
   where.copy(buf, p += 4);
 
   state.requests[reqid] = {
@@ -1689,14 +1646,14 @@ SFTPStream.prototype.fstat = function(handle, cb) {
   */
   var handlelen = handle.length;
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handlelen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + handlelen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.FSTAT;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, handlelen, p);
+  buf.writeUInt32BE(handlelen, p, true);
   handle.copy(buf, p += 4);
 
   state.requests[reqid] = { cb: cb };
@@ -1716,14 +1673,14 @@ SFTPStream.prototype.stat = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.STAT;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -1743,14 +1700,14 @@ SFTPStream.prototype.lstat = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.LSTAT;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -1770,14 +1727,14 @@ SFTPStream.prototype.opendir = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.OPENDIR;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -1793,7 +1750,7 @@ SFTPStream.prototype.setstat = function(path, attrs, cb) {
   var attrBytes = 0;
   var state = this._state;
 
-  if (typeof attrs === 'object' && attrs !== null) {
+  if (typeof attrs === 'object') {
     attrs = attrsToBytes(attrs);
     flags = attrs.flags;
     attrBytes = attrs.nbytes;
@@ -1808,16 +1765,16 @@ SFTPStream.prototype.setstat = function(path, attrs, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen + 4 + attrBytes);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen + 4 + attrBytes);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.SETSTAT;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
-  writeUInt32BE(buf, flags, p += pathlen);
+  buf.writeUInt32BE(flags, p += pathlen);
   if (flags) {
     p += 4;
     for (var i = 0, len = attrs.length; i < len; ++i)
@@ -1840,7 +1797,7 @@ SFTPStream.prototype.fsetstat = function(handle, attrs, cb) {
   var attrBytes = 0;
   var state = this._state;
 
-  if (typeof attrs === 'object' && attrs !== null) {
+  if (typeof attrs === 'object') {
     attrs = attrsToBytes(attrs);
     flags = attrs.flags;
     attrBytes = attrs.nbytes;
@@ -1855,16 +1812,16 @@ SFTPStream.prototype.fsetstat = function(handle, attrs, cb) {
   */
   var handlelen = handle.length;
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handlelen + 4 + attrBytes);
+  var buf = new Buffer(4 + 1 + 4 + 4 + handlelen + 4 + attrBytes);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.FSETSTAT;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, handlelen, p);
+  buf.writeUInt32BE(handlelen, p, true);
   handle.copy(buf, p += 4);
-  writeUInt32BE(buf, flags, p += handlelen);
+  buf.writeUInt32BE(flags, p += handlelen);
   if (flags) {
     p += 4;
     for (var i = 0, len = attrs.length; i < len; ++i)
@@ -1923,14 +1880,14 @@ SFTPStream.prototype.readlink = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.READLINK;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = {
@@ -1960,23 +1917,23 @@ SFTPStream.prototype.symlink = function(targetPath, linkPath, cb) {
   var linklen = Buffer.byteLength(linkPath);
   var targetlen = Buffer.byteLength(targetPath);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + linklen + 4 + targetlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + linklen + 4 + targetlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.SYMLINK;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
   if (this._isOpenSSH) {
     // OpenSSH has linkpath and targetpath positions switched
-    writeUInt32BE(buf, targetlen, p);
+    buf.writeUInt32BE(targetlen, p, true);
     buf.write(targetPath, p += 4, targetlen, 'utf8');
-    writeUInt32BE(buf, linklen, p += targetlen);
+    buf.writeUInt32BE(linklen, p += targetlen, true);
     buf.write(linkPath, p += 4, linklen, 'utf8');
   } else {
-    writeUInt32BE(buf, linklen, p);
+    buf.writeUInt32BE(linklen, p, true);
     buf.write(linkPath, p += 4, linklen, 'utf8');
-    writeUInt32BE(buf, targetlen, p += linklen);
+    buf.writeUInt32BE(targetlen, p += linklen, true);
     buf.write(targetPath, p += 4, targetlen, 'utf8');
   }
 
@@ -1997,14 +1954,14 @@ SFTPStream.prototype.realpath = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.REALPATH;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
+  buf.writeUInt32BE(reqid, 5, true);
 
-  writeUInt32BE(buf, pathlen, p);
+  buf.writeUInt32BE(pathlen, p, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = {
@@ -2039,18 +1996,18 @@ SFTPStream.prototype.ext_openssh_rename = function(oldPath, newPath, cb) {
   var oldlen = Buffer.byteLength(oldPath);
   var newlen = Buffer.byteLength(newPath);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + 24 + 4 + oldlen + 4 + newlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + 24 + 4 + oldlen + 4 + newlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.EXTENDED;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
-  writeUInt32BE(buf, 24, p);
+  buf.writeUInt32BE(reqid, 5, true);
+  buf.writeUInt32BE(24, p, true);
   buf.write('posix-rename@openssh.com', p += 4, 24, 'ascii');
 
-  writeUInt32BE(buf, oldlen, p += 24);
+  buf.writeUInt32BE(oldlen, p += 24, true);
   buf.write(oldPath, p += 4, oldlen, 'utf8');
-  writeUInt32BE(buf, newlen, p += oldlen);
+  buf.writeUInt32BE(newlen, p += oldlen, true);
   buf.write(newPath, p += 4, newlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -2074,16 +2031,16 @@ SFTPStream.prototype.ext_openssh_statvfs = function(path, cb) {
   */
   var pathlen = Buffer.byteLength(path);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + 19 + 4 + pathlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + 19 + 4 + pathlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.EXTENDED;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
-  writeUInt32BE(buf, 19, p);
+  buf.writeUInt32BE(reqid, 5, true);
+  buf.writeUInt32BE(19, p, true);
   buf.write('statvfs@openssh.com', p += 4, 19, 'ascii');
 
-  writeUInt32BE(buf, pathlen, p += 19);
+  buf.writeUInt32BE(pathlen, p += 19, true);
   buf.write(path, p += 4, pathlen, 'utf8');
 
   state.requests[reqid] = {
@@ -2112,16 +2069,16 @@ SFTPStream.prototype.ext_openssh_fstatvfs = function(handle, cb) {
   */
   var handlelen = handle.length;
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + 20 + 4 + handlelen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + 20 + 4 + handlelen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.EXTENDED;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
-  writeUInt32BE(buf, 20, p);
+  buf.writeUInt32BE(reqid, 5, true);
+  buf.writeUInt32BE(20, p, true);
   buf.write('fstatvfs@openssh.com', p += 4, 20, 'ascii');
 
-  writeUInt32BE(buf, handlelen, p += 20);
+  buf.writeUInt32BE(handlelen, p += 20, true);
   buf.write(handle, p += 4, handlelen, 'utf8');
 
   state.requests[reqid] = {
@@ -2150,18 +2107,18 @@ SFTPStream.prototype.ext_openssh_hardlink = function(oldPath, newPath, cb) {
   var oldlen = Buffer.byteLength(oldPath);
   var newlen = Buffer.byteLength(newPath);
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + 20 + 4 + oldlen + 4 + newlen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + 20 + 4 + oldlen + 4 + newlen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.EXTENDED;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
-  writeUInt32BE(buf, 20, p);
+  buf.writeUInt32BE(reqid, 5, true);
+  buf.writeUInt32BE(20, p, true);
   buf.write('hardlink@openssh.com', p += 4, 20, 'ascii');
 
-  writeUInt32BE(buf, oldlen, p += 20);
+  buf.writeUInt32BE(oldlen, p += 20, true);
   buf.write(oldPath, p += 4, oldlen, 'utf8');
-  writeUInt32BE(buf, newlen, p += oldlen);
+  buf.writeUInt32BE(newlen, p += oldlen, true);
   buf.write(newPath, p += 4, newlen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -2187,16 +2144,16 @@ SFTPStream.prototype.ext_openssh_fsync = function(handle, cb) {
   */
   var handlelen = handle.length;
   var p = 9;
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + 17 + 4 + handlelen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + 17 + 4 + handlelen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = REQUEST.EXTENDED;
   var reqid = state.writeReqid = (state.writeReqid + 1) % MAX_REQID;
-  writeUInt32BE(buf, reqid, 5);
-  writeUInt32BE(buf, 17, p);
+  buf.writeUInt32BE(reqid, 5, true);
+  buf.writeUInt32BE(17, p, true);
   buf.write('fsync@openssh.com', p += 4, 17, 'ascii');
 
-  writeUInt32BE(buf, handlelen, p += 17);
+  buf.writeUInt32BE(handlelen, p += 17, true);
   buf.write(handle, p += 4, handlelen, 'utf8');
 
   state.requests[reqid] = { cb: cb };
@@ -2218,19 +2175,19 @@ SFTPStream.prototype.status = function(id, code, message, lang) {
 
   var msgLen = Buffer.byteLength(message);
   var langLen = Buffer.byteLength(lang);
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + 4 + msgLen + 4 + langLen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + 4 + msgLen + 4 + langLen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = RESPONSE.STATUS;
-  writeUInt32BE(buf, id, 5);
+  buf.writeUInt32BE(id, 5, true);
 
-  writeUInt32BE(buf, code, 9);
+  buf.writeUInt32BE(code, 9, true);
 
-  writeUInt32BE(buf, msgLen, 13);
+  buf.writeUInt32BE(msgLen, 13, true);
   if (msgLen)
     buf.write(message, 17, msgLen, 'utf8');
 
-  writeUInt32BE(buf, langLen, 17 + msgLen);
+  buf.writeUInt32BE(langLen, 17 + msgLen, true);
   if (langLen)
     buf.write(lang, 17 + msgLen + 4, langLen, 'ascii');
 
@@ -2249,13 +2206,13 @@ SFTPStream.prototype.handle = function(id, handle) {
   if (handleLen > 256)
     throw new Error('handle too large (> 256 bytes)');
 
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + handleLen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + handleLen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = RESPONSE.HANDLE;
-  writeUInt32BE(buf, id, 5);
+  buf.writeUInt32BE(id, 5, true);
 
-  writeUInt32BE(buf, handleLen, 9);
+  buf.writeUInt32BE(handleLen, 9, true);
   if (handleLen)
     handle.copy(buf, 13);
 
@@ -2275,13 +2232,13 @@ SFTPStream.prototype.data = function(id, data, encoding) {
     encoding || (encoding = 'utf8');
 
   var dataLen = (isBuffer ? data.length : Buffer.byteLength(data, encoding));
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + dataLen);
+  var buf = new Buffer(4 + 1 + 4 + 4 + dataLen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = RESPONSE.DATA;
-  writeUInt32BE(buf, id, 5);
+  buf.writeUInt32BE(id, 5, true);
 
-  writeUInt32BE(buf, dataLen, 9);
+  buf.writeUInt32BE(dataLen, 9, true);
   if (dataLen) {
     if (isBuffer)
       data.copy(buf, 13);
@@ -2296,11 +2253,10 @@ SFTPStream.prototype.name = function(id, names) {
   if (!this.server)
     throw new Error('Server-only method called in client mode');
 
-  if (!Array.isArray(names)) {
-    if (typeof names !== 'object' || names === null)
-      throw new Error('names is not an object or array');
+  if (!Array.isArray(names) && typeof names === 'object')
     names = [ names ];
-  }
+  else if (!Array.isArray(names))
+    throw new Error('names is not an object or array');
 
   var count = names.length;
   var namesLen = 0;
@@ -2329,7 +2285,7 @@ SFTPStream.prototype.name = function(id, names) {
                 : name.longname);
     namesLen += 4 + Buffer.byteLength(longname);
 
-    if (typeof name.attrs === 'object' && name.attrs !== null) {
+    if (typeof name.attrs === 'object') {
       nameAttrs = attrsToBytes(name.attrs);
       namesLen += 4 + nameAttrs.nbytes;
       attrs.push(nameAttrs);
@@ -2339,13 +2295,13 @@ SFTPStream.prototype.name = function(id, names) {
     }
   }
 
-  buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + namesLen);
+  buf = new Buffer(4 + 1 + 4 + 4 + namesLen);
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = RESPONSE.NAME;
-  writeUInt32BE(buf, id, 5);
+  buf.writeUInt32BE(id, 5, true);
 
-  writeUInt32BE(buf, count, 9);
+  buf.writeUInt32BE(count, 9, true);
 
   p = 13;
 
@@ -2356,7 +2312,7 @@ SFTPStream.prototype.name = function(id, names) {
                 ? ''
                 : name.filename);
     len = Buffer.byteLength(filename);
-    writeUInt32BE(buf, len, p);
+    buf.writeUInt32BE(len, p, true);
     p += 4;
     if (len) {
       buf.write(filename, p, len, 'utf8');
@@ -2367,7 +2323,7 @@ SFTPStream.prototype.name = function(id, names) {
                 ? ''
                 : name.longname);
     len = Buffer.byteLength(longname);
-    writeUInt32BE(buf, len, p);
+    buf.writeUInt32BE(len, p, true);
     p += 4;
     if (len) {
       buf.write(longname, p, len, 'utf8');
@@ -2376,7 +2332,7 @@ SFTPStream.prototype.name = function(id, names) {
 
     attr = attrs[i];
     if (attr) {
-      writeUInt32BE(buf, attr.flags, p);
+      buf.writeUInt32BE(attr.flags, p, true);
       p += 4;
       if (attr.flags && attr.bytes) {
         var bytes = attr.bytes;
@@ -2385,7 +2341,7 @@ SFTPStream.prototype.name = function(id, names) {
             buf[p++] = bytes[j][k];
       }
     } else {
-      writeUInt32BE(buf, 0, p);
+      buf.writeUInt32BE(0, p, true);
       p += 4;
     }
   }
@@ -2397,18 +2353,18 @@ SFTPStream.prototype.attrs = function(id, attrs) {
   if (!this.server)
     throw new Error('Server-only method called in client mode');
 
-  if (typeof attrs !== 'object' || attrs === null)
+  if (typeof attrs !== 'object')
     throw new Error('attrs is not an object');
 
   var info = attrsToBytes(attrs);
-  var buf = Buffer.allocUnsafe(4 + 1 + 4 + 4 + info.nbytes);
+  var buf = new Buffer(4 + 1 + 4 + 4 + info.nbytes);
   var p = 13;
 
-  writeUInt32BE(buf, buf.length - 4, 0);
+  buf.writeUInt32BE(buf.length - 4, 0, true);
   buf[4] = RESPONSE.ATTRS;
-  writeUInt32BE(buf, id, 5);
+  buf.writeUInt32BE(id, 5, true);
 
-  writeUInt32BE(buf, info.flags, 9);
+  buf.writeUInt32BE(info.flags, 9, true);
 
   if (info.flags && info.bytes) {
     var bytes = info.bytes;
@@ -2436,7 +2392,7 @@ function readAttrs(buf, p, stream, callback) {
     ...      more extended data (extended_type - extended_data pairs),
                so that number of pairs equals extended_count
   */
-  var flags = readUInt32BE(buf, p);
+  var flags = buf.readUInt32BE(p, true);
   var attrs = new Stats();
 
   p += 4;
@@ -2527,9 +2483,6 @@ function attrsToBytes(attrs) {
   var attrBytes = 0;
   var ret = [];
   var i = 0;
-
-  if (typeof attrs !== 'object' || attrs === null)
-    return { flags: flags, nbytes: attrBytes, bytes: ret };
 
   if (typeof attrs.size === 'number') {
     flags |= ATTR.SIZE;
@@ -2670,49 +2623,21 @@ Stats.prototype.isSocket = function() {
 };
 SFTPStream.Stats = Stats;
 
-// =============================================================================
-// ReadStream/WriteStream-related
-var fsCompat = require('./node-fs-compat');
-var validateNumber = fsCompat.validateNumber;
-var destroyImpl = fsCompat.destroyImpl;
-var ERR_OUT_OF_RANGE = fsCompat.ERR_OUT_OF_RANGE;
-var ERR_INVALID_ARG_TYPE = fsCompat.ERR_INVALID_ARG_TYPE;
 
+// ReadStream-related
 var kMinPoolSpace = 128;
-
 var pool;
-// It can happen that we expect to read a large chunk of data, and reserve
-// a large chunk of the pool accordingly, but the read() call only filled
-// a portion of it. If a concurrently executing read() then uses the same pool,
-// the "reserved" portion cannot be used, so we allow it to be re-used as a
-// new pool later.
-var poolFragments = [];
-
 function allocNewPool(poolSize) {
-  if (poolFragments.length > 0)
-    pool = poolFragments.pop();
-  else
-    pool = Buffer.allocUnsafe(poolSize);
+  pool = new Buffer(poolSize);
   pool.used = 0;
 }
 
-// Check the `this.start` and `this.end` of stream.
-function checkPosition(pos, name) {
-  if (!Number.isSafeInteger(pos)) {
-    validateNumber(pos, name);
-    if (!Number.isInteger(pos))
-      throw new ERR_OUT_OF_RANGE(name, 'an integer', pos);
-    throw new ERR_OUT_OF_RANGE(name, '>= 0 and <= 2 ** 53 - 1', pos);
-  }
-  if (pos < 0)
-    throw new ERR_OUT_OF_RANGE(name, '>= 0 and <= 2 ** 53 - 1', pos);
-}
-
-function roundUpToMultipleOf8(n) {
-  return (n + 7) & ~7;  // Align to 8 byte boundary.
-}
-
 function ReadStream(sftp, path, options) {
+  if (!(this instanceof ReadStream))
+    return new ReadStream(sftp, path, options);
+
+  var self = this;
+
   if (options === undefined)
     options = {};
   else if (typeof options === 'string')
@@ -2722,53 +2647,43 @@ function ReadStream(sftp, path, options) {
   else
     options = Object.create(options);
 
-  // A little bit bigger buffer and water marks by default
+  // a little bit bigger buffer and water marks by default
   if (options.highWaterMark === undefined)
     options.highWaterMark = 64 * 1024;
-
-  // For backwards compat do not emit close on destroy.
-  options.emitClose = false;
 
   ReadableStream.call(this, options);
 
   this.path = path;
+  this.handle = options.handle === undefined ? null : options.handle;
   this.flags = options.flags === undefined ? 'r' : options.flags;
-  this.mode = options.mode === undefined ? 0o666 : options.mode;
+  this.mode = options.mode === undefined ? 438/*0666*/ : options.mode;
 
-  this.start = options.start;
-  this.end = options.end;
+  this.start = options.start === undefined ? undefined : options.start;
+  this.end = options.end === undefined ? undefined : options.end;
   this.autoClose = options.autoClose === undefined ? true : options.autoClose;
   this.pos = 0;
-  this.bytesRead = 0;
-  this.closed = false;
-
-  this.handle = options.handle === undefined ? null : options.handle;
   this.sftp = sftp;
-  this._opening = false;
 
   if (this.start !== undefined) {
-    checkPosition(this.start, 'start');
+    if (typeof this.start !== 'number')
+      throw new TypeError('start must be a Number');
+    if (this.end === undefined)
+      this.end = Infinity;
+    else if (typeof this.end !== 'number')
+      throw new TypeError('end must be a Number');
+
+    if (this.start > this.end)
+      throw new Error('start must be <= end');
+    else if (this.start < 0)
+      throw new Error('start must be >= zero');
 
     this.pos = this.start;
   }
 
-  if (this.end === undefined) {
-    this.end = Infinity;
-  } else if (this.end !== Infinity) {
-    checkPosition(this.end, 'end');
-
-    if (this.start !== undefined && this.start > this.end) {
-      throw new ERR_OUT_OF_RANGE(
-        'start',
-        `<= "end" (here: ${this.end})`,
-        this.start
-      );
-    }
-  }
-
   this.on('end', function() {
-    if (this.autoClose)
-      this.destroy();
+    if (self.autoClose) {
+      self.destroy();
+    }
   });
 
   if (!Buffer.isBuffer(this.handle))
@@ -2777,26 +2692,19 @@ function ReadStream(sftp, path, options) {
 inherits(ReadStream, ReadableStream);
 
 ReadStream.prototype.open = function() {
-  if (this._opening)
-    return;
-
-  this._opening = true;
-
-  this.sftp.open(this.path, this.flags, this.mode, (er, handle) => {
-    this._opening = false;
-
+  var self = this;
+  this.sftp.open(this.path, this.flags, this.mode, function(er, handle) {
     if (er) {
-      this.emit('error', er);
-      if (this.autoClose)
-        this.destroy();
+      self.emit('error', er);
+      this.destroyed = this.closed = true;
+      self.emit('close');
       return;
     }
 
-    this.handle = handle;
-    this.emit('open', handle);
-    this.emit('ready');
+    self.handle = handle;
+    self.emit('open', handle);
     // start the flow of data.
-    this.read();
+    self.read();
   });
 };
 
@@ -2807,14 +2715,13 @@ ReadStream.prototype._read = function(n) {
     });
   }
 
-  // XXX: safe to remove this?
   if (this.destroyed)
     return;
 
   if (!pool || pool.length - pool.used < kMinPoolSpace) {
     // discard the old pool.
-    allocNewPool(this.readableHighWaterMark
-                 || this._readableState.highWaterMark);
+    pool = null;
+    allocNewPool(this._readableState.highWaterMark);
   }
 
   // Grab another reference to the pool in the case that while we're
@@ -2827,94 +2734,73 @@ ReadStream.prototype._read = function(n) {
   if (this.end !== undefined)
     toRead = Math.min(this.end - this.pos + 1, toRead);
 
-  // Already read everything we were supposed to read!
+  // already read everything we were supposed to read!
   // treat as EOF.
   if (toRead <= 0)
     return this.push(null);
 
   // the actual read.
-  this.sftp.readData(this.handle,
-                     pool,
-                     pool.used,
-                     toRead,
-                     this.pos,
-                     (er, bytesRead) => {
+  var self = this;
+  this.sftp.readData(this.handle, pool, pool.used, toRead, this.pos, onread);
+
+  // move the pool positions, and internal position for reading.
+  this.pos += toRead;
+  pool.used += toRead;
+
+  function onread(er, bytesRead) {
     if (er) {
-      this.emit('error', er);
-      if (this.autoClose)
-        this.destroy();
-      return;
-    }
-    var b = null;
-
-    // Now that we know how much data we have actually read, re-wind the
-    // 'used' field if we can, and otherwise allow the remainder of our
-    // reservation to be used as a new pool later.
-    if (start + toRead === thisPool.used && thisPool === pool) {
-      var newUsed = thisPool.used + bytesRead - toRead;
-      thisPool.used = roundUpToMultipleOf8(newUsed);
+      if (self.autoClose)
+        self.destroy();
+      self.emit('error', er);
     } else {
-      // Round down to the next lowest multiple of 8 to ensure the new pool
-      // fragment start and end positions are aligned to an 8 byte boundary.
-      var alignedEnd = (start + toRead) & ~7;
-      var alignedStart = roundUpToMultipleOf8(start + bytesRead);
-      if (alignedEnd - alignedStart >= kMinPoolSpace)
-        poolFragments.push(thisPool.slice(alignedStart, alignedEnd));
+      var b = null;
+      if (bytesRead > 0)
+        b = thisPool.slice(start, start + bytesRead);
+
+      self.push(b);
     }
-
-    if (bytesRead > 0) {
-      this.bytesRead += bytesRead;
-      b = thisPool.slice(start, start + bytesRead);
-    }
-
-    // Move the pool positions, and internal position for reading.
-    this.pos += bytesRead;
-
-    this.push(b);
-  });
-
-  pool.used = roundUpToMultipleOf8(pool.used + toRead);
+  }
 };
 
-if (typeof ReadableStream.prototype.destroy !== 'function')
-  ReadStream.prototype.destroy = destroyImpl;
-
-ReadStream.prototype._destroy = function(err, cb) {
-  if (this._opening && !Buffer.isBuffer(this.handle)) {
-    this.once('open', closeStream.bind(null, this, cb, err));
+ReadStream.prototype.destroy = function() {
+  if (this.destroyed)
     return;
-  }
-
-  closeStream(this, cb, err);
-  this.handle = null;
-  this._opening = false;
+  this.destroyed = true;
+  if (Buffer.isBuffer(this.handle))
+    this.close();
 };
 
-function closeStream(stream, cb, err) {
-  if (!stream.handle)
-    return onclose();
-
-  stream.sftp.close(stream.handle, onclose);
-
-  function onclose(er) {
-    er = er || err;
-    cb(er);
-    stream.closed = true;
-    if (!er)
-      stream.emit('close');
-  }
-}
 
 ReadStream.prototype.close = function(cb) {
-  this.destroy(null, cb);
+  var self = this;
+  if (cb)
+    this.once('close', cb);
+  if (this.closed || !Buffer.isBuffer(this.handle)) {
+    if (!Buffer.isBuffer(this.handle)) {
+      this.once('open', close);
+      return;
+    }
+    return process.nextTick(this.emit.bind(this, 'close'));
+  }
+  this.closed = true;
+  close();
+
+  function close(handle) {
+    self.sftp.close(handle || self.handle, function(er) {
+      if (er)
+        self.emit('error', er);
+      else
+        self.emit('close');
+    });
+    self.handle = null;
+  }
 };
 
-Object.defineProperty(ReadStream.prototype, 'pending', {
-  get() { return this.handle === null; },
-  configurable: true
-});
 
 function WriteStream(sftp, path, options) {
+  if (!(this instanceof WriteStream))
+    return new WriteStream(sftp, path, options);
+
   if (options === undefined)
     options = {};
   else if (typeof options === 'string')
@@ -2924,27 +2810,24 @@ function WriteStream(sftp, path, options) {
   else
     options = Object.create(options);
 
-  // For backwards compat do not emit close on destroy.
-  options.emitClose = false;
-
   WritableStream.call(this, options);
 
   this.path = path;
+  this.handle = options.handle === undefined ? null : options.handle;
   this.flags = options.flags === undefined ? 'w' : options.flags;
-  this.mode = options.mode === undefined ? 0o666 : options.mode;
+  this.mode = options.mode === undefined ? 438/*0666*/ : options.mode;
 
-  this.start = options.start;
+  this.start = options.start === undefined ? undefined : options.start;
   this.autoClose = options.autoClose === undefined ? true : options.autoClose;
   this.pos = 0;
   this.bytesWritten = 0;
-  this.closed = false;
-
-  this.handle = options.handle === undefined ? null : options.handle;
   this.sftp = sftp;
-  this._opening = false;
 
   if (this.start !== undefined) {
-    checkPosition(this.start, 'start');
+    if (typeof this.start !== 'number')
+      throw new TypeError('start must be a Number');
+    if (this.start < 0)
+      throw new Error('start must be >= zero');
 
     this.pos = this.start;
   }
@@ -2952,63 +2835,51 @@ function WriteStream(sftp, path, options) {
   if (options.encoding)
     this.setDefaultEncoding(options.encoding);
 
-  // Node v6.x only
-  this.on('finish', function() {
-    if (this._writableState.finalCalled)
-      return;
-    if (this.autoClose)
-      this.destroy();
-  });
-
   if (!Buffer.isBuffer(this.handle))
     this.open();
+
+  // dispose on finish.
+  this.once('finish', function onclose() {
+    if (this.autoClose)
+      this.close();
+  });
 }
 inherits(WriteStream, WritableStream);
 
-WriteStream.prototype._final = function(cb) {
-  if (this.autoClose)
-    this.destroy();
-  cb();
-};
-
 WriteStream.prototype.open = function() {
-  if (this._opening)
-    return;
-
-  this._opening = true;
-
-  this.sftp.open(this.path, this.flags, this.mode, (er, handle) => {
-    this._opening = false;
-
+  var self = this;
+  this.sftp.open(this.path, this.flags, this.mode, function(er, handle) {
     if (er) {
-      this.emit('error', er);
-      if (this.autoClose)
-        this.destroy();
+      self.emit('error', er);
+      if (self.autoClose) {
+        self.destroyed = self.closed = true;
+        self.emit('close');
+      }
       return;
     }
 
-    this.handle = handle;
+    self.handle = handle;
 
-    var tryAgain = (err) => {
+    self.sftp.fchmod(handle, self.mode, function tryAgain(err) {
       if (err) {
         // Try chmod() for sftp servers that may not support fchmod() for
         // whatever reason
-        this.sftp.chmod(this.path, this.mode, (err_) => {
+        self.sftp.chmod(self.path, self.mode, function(err_) {
           tryAgain();
         });
         return;
       }
 
       // SFTPv3 requires absolute offsets, no matter the open flag used
-      if (this.flags[0] === 'a') {
-        var tryStat = (err, st) => {
+      if (self.flags[0] === 'a') {
+        self.sftp.fstat(handle, function tryStat(err, st) {
           if (err) {
             // Try stat() for sftp servers that may not support fstat() for
             // whatever reason
-            this.sftp.stat(this.path, (err_, st_) => {
+            self.sftp.stat(self.path, function(err_, st_) {
               if (err_) {
-                this.destroy();
-                this.emit('error', err);
+                self.destroy();
+                self.emit('error', err);
                 return;
               }
               tryStat(null, st_);
@@ -3016,28 +2887,19 @@ WriteStream.prototype.open = function() {
             return;
           }
 
-          this.pos = st.size;
-          this.emit('open', handle);
-          this.emit('ready');
-        };
-
-        this.sftp.fstat(handle, tryStat);
+          self.pos = st.size;
+          self.emit('open', handle);
+        });
         return;
       }
-
-      this.emit('open', handle);
-      this.emit('ready');
-    };
-
-    this.sftp.fchmod(handle, this.mode, tryAgain);
+      self.emit('open', handle);
+    });
   });
 };
 
 WriteStream.prototype._write = function(data, encoding, cb) {
-  if (!Buffer.isBuffer(data)) {
-    const err = new ERR_INVALID_ARG_TYPE('data', 'Buffer', data);
-    return this.emit('error', err);
-  }
+  if (!Buffer.isBuffer(data))
+    return this.emit('error', new Error('Invalid data'));
 
   if (!Buffer.isBuffer(this.handle)) {
     return this.once('open', function() {
@@ -3045,18 +2907,19 @@ WriteStream.prototype._write = function(data, encoding, cb) {
     });
   }
 
+  var self = this;
   this.sftp.writeData(this.handle,
                       data,
                       0,
                       data.length,
                       this.pos,
-                      (er, bytes) => {
+                      function(er, bytes) {
     if (er) {
-      if (this.autoClose)
-        this.destroy();
+      if (self.autoClose)
+        self.destroy();
       return cb(er);
     }
-    this.bytesWritten += bytes;
+    self.bytesWritten += bytes;
     cb();
   });
 
@@ -3073,55 +2936,32 @@ WriteStream.prototype._writev = function(data, cb) {
   var sftp = this.sftp;
   var handle = this.handle;
   var writesLeft = data.length;
+  var self = this;
 
-  var onwrite = (er, bytes) => {
-    if (er) {
-      this.destroy();
-      return cb(er);
-    }
-    this.bytesWritten += bytes;
-    if (--writesLeft === 0)
-      cb();
-  };
-
-  // TODO: try to combine chunks to reduce number of requests to the server
   for (var i = 0; i < data.length; ++i) {
     var chunk = data[i].chunk;
 
     sftp.writeData(handle, chunk, 0, chunk.length, this.pos, onwrite);
     this.pos += chunk.length;
   }
-};
 
-if (typeof WritableStream.prototype.destroy !== 'function')
-  WriteStream.prototype.destroy = ReadStream.prototype.destroy;
-
-WriteStream.prototype._destroy = ReadStream.prototype._destroy;
-WriteStream.prototype.close = function(cb) {
-  if (cb) {
-    if (this.closed) {
-      process.nextTick(cb);
-      return;
-    } else {
-      this.on('close', cb);
+  function onwrite(er, bytes) {
+    if (er) {
+      self.destroy();
+      return cb(er);
     }
+    self.bytesWritten += bytes;
+    if (--writesLeft === 0)
+      cb();
   }
-
-  // If we are not autoClosing, we should call
-  // destroy on 'finish'.
-  if (!this.autoClose)
-    this.on('finish', this.destroy.bind(this));
-
-  this.end();
 };
+
+WriteStream.prototype.destroy = ReadStream.prototype.destroy;
+WriteStream.prototype.close = ReadStream.prototype.close;
 
 // There is no shutdown() for files.
 WriteStream.prototype.destroySoon = WriteStream.prototype.end;
 
-Object.defineProperty(WriteStream.prototype, 'pending', {
-  get() { return this.handle === null; },
-  configurable: true
-});
 
 module.exports = SFTPStream;
 

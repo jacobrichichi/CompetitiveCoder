@@ -50,6 +50,7 @@ require("./config/passport")(passport);
 app.use("/api/users", users);
 
 const port = process.env.PORT || 5000; 
+process.env.SKIP_PREFLIGHT_CHECK=true
 
 app.use(express.static(path.join(__dirname, "client", "build")));
 app.get("*", (req, res) => {
