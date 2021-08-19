@@ -8,8 +8,7 @@
     "start": "node server.js",
     "server": "nodemon server.js",
     "client": "npm start --prefix client",
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "heroku-postbuild": "cd client && npm install && npm run build"
+    "dev": "concurrently \"npm run server\" \"npm run client\""
   },
   "author": "",
   "license": "ISC",
@@ -17,13 +16,11 @@
     "@monaco-editor/react": "^4.2.0",
     "ace-builds": "^1.4.12",
     "axios": "^0.21.1",
-    "babel-eslint": "9.0.0",
-    "babel-jest": "23.6.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.19.0",
     "bootstrap": "^4.6.0",
     "bootstrap-select": "^1.13.18",
-    "concurrently": "^6.1.0",
+    "concurrently": "^6.2.1",
     "dotenv": "^10.0.0",
     "emailjs-com": "^3.1.0",
     "express": "^4.17.1",
@@ -31,13 +28,15 @@
     "http": "0.0.1-security",
     "is-empty": "^1.2.0",
     "jsonwebtoken": "^8.5.1",
-    "mongoose": "^5.12.10",
+    "mongoose": "^5.13.7",
     "passport": "^0.4.1",
     "passport-jwt": "^4.0.0",
     "portfinder": "^1.0.28",
+    "react": "^17.0.2",
     "react-ace": "^9.4.1",
     "react-bootstrap": "^1.6.1",
     "react-countup": "^4.3.3",
+    "react-dom": "^17.0.2",
     "react-panelgroup": "^1.0.12",
     "react-resizable": "^3.0.4",
     "react-resize-panel": "^0.3.5",
@@ -49,15 +48,13 @@
     "socket.io-client": "^4.1.2",
     "unirest": "^0.6.0",
     "validator": "^13.6.0",
+    "web-vitals": "^2.1.0",
     "websocket": "^1.0.34"
   },
   "engines": {
-    "node": "14.x",
-    "yarn": "1.22.10"
+    "node": "14.x"
   },
   "devDependencies": {
-    "nodemon": "^2.0.7",
-    "babel-eslint": "9.0.0",
-    "babel-jest": "23.6.0"
+    "nodemon": "^2.0.12"
   }
 }
