@@ -13,7 +13,12 @@ const server = http.createServer(app);
 const socketIO = require("socket.io");
 
 
-const io = socketIO(server);
+const io = socketIO(server, {
+	cors: {
+		origin: "http://competitivecoder.com",
+		methods: ["GET","POST"]
+	}
+});
 
 var rooms = 0;
 var namesToLobbies = [];
@@ -24,7 +29,9 @@ var socketsToRooms = [];
 const users = require("./routes/api/users");
 
 // Cors middleware
-app.use(cors());
+app.use(cors({
+	origin: 'http://competitivecoder.com'
+}));
 app.use(express.json());
 
 
@@ -50,14 +57,13 @@ require("./config/passport")(passport);
 // Routes
 app.use("/api/users", users);
 
+
 app.use(express.static(path.join(__dirname, "client/build")));
 app.get("*", (req, res) =>
         res.sendFile(path.join(__dirname, "client/build", "index.html"))
 );
 
 const port = process.env.PORT || 5000; 
-process.env.SKIP_PREFLIGHT_CHECK=true
-
 
 io.on('connection', function(socket){
   socket.on("getLobbies", () =>{
